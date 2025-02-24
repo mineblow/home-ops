@@ -6,12 +6,12 @@ metadata:
 spec:
   project: default
   source:
-    chart: argo-cd
-    repoURL: https://argoproj.github.io/argo-helm
-    targetRevision: 5.51.3  # Set to the latest chart version
+    repoURL: https://argoproj.github.io/argo-helm  # ✅ Official Helm Chart Repo
+    chart: argo-cd  # ✅ Chart name inside their repo
+    targetRevision: 5.51.3  # ✅ Ensure this matches a valid version
     helm:
       valueFiles:
-        - values.yaml
+        - https://raw.githubusercontent.com/mineblow/home-ops/main/kubernetes/argocd/values.yaml  # ✅ RAW URL to `values.yaml`
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
@@ -19,3 +19,8 @@ spec:
     automated:
       prune: true
       selfHeal: true
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/selector
