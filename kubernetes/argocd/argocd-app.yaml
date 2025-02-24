@@ -5,13 +5,13 @@ metadata:
   namespace: argocd
 spec:
   project: default
-  source:
-    repoURL: https://argoproj.github.io/argo-helm  # ✅ Official Helm Chart Repo
-    chart: argo-cd  # ✅ Chart name inside their repo
-    targetRevision: 5.51.3  # ✅ Ensure this matches a valid version
-    helm:
-      valueFiles:
-        - https://raw.githubusercontent.com/mineblow/home-ops/main/kubernetes/argocd/values.yaml  # ✅ RAW URL to `values.yaml`
+  sources:
+    - repoURL: https://argoproj.github.io/argo-helm  # 🔥 Official ArgoCD Helm chart repo
+      chart: argo-cd
+      targetRevision: 5.51.3
+    - repoURL: https://github.com/mineblow/home-ops.git  # 🔥 Your Git repo containing values.yaml
+      targetRevision: main  # Adjust if using a different branch
+      path: kubernetes/argocd # Path to your values.yaml in the repo
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
@@ -24,3 +24,6 @@ spec:
       kind: Deployment
       jsonPointers:
         - /spec/selector
+  helm:
+    valueFiles:
+      - values.yaml  # 🔥 Now it knows to pull from your Git repo
