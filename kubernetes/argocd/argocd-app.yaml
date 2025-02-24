@@ -6,9 +6,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/mineblow/home-ops.git
-    targetRevision: HEAD
-    path: /kubernetes/argocd  # This is where our Helm chart is stored
+    chart: argo-cd
+    repoURL: https://argoproj.github.io/argo-helm
+    targetRevision: 5.51.3  # Set to the latest chart version
     helm:
       valueFiles:
         - values.yaml
