@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: https://github.com/mineblow/home-ops.git
     targetRevision: HEAD
-    path: argocd  # This is where our Helm chart is stored
+    path: /kubernetes/argocd  # This is where our Helm chart is stored
     helm:
       valueFiles:
         - values.yaml
