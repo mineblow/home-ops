@@ -1,0 +1,16 @@
+server:
+  service:
+    type: NodePort
+  ingress:
+    enabled: false  # Change to true if using an Ingress controller
+
+repoServer:
+  extraArgs:
+    - --parallelism-limit=10  # Optimize sync speed
+
+controller:
+  enableStatefulSet: true  # Better persistence
+
+configs:
+  cm:
+    admin.enabled: "true"  # Enable admin user
