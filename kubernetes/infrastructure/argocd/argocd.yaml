@@ -15,7 +15,6 @@ spec:
 
     - repoURL: https://github.com/mineblow/home-ops.git  # Your Git repo containing values.yaml
       targetRevision: main
-      path: kubernetes/infrastructure/argocd  # Correct path where values.yaml is located
       ref: values
 
   destination:
@@ -26,6 +25,8 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
 
   # ignoreDifferences:
   #   - group: apps
