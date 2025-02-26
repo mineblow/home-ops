@@ -1,33 +1,34 @@
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: argocd
-  namespace: argocd
+  name: argo
+  namespace: argo-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+  labels:
+    argocd.argoproj.io/instance: argo
 spec:
   project: default
   sources:
-    - chart: argo-cd
-      repoURL: https://argoproj.github.io/argo-helm  # Official Helm Chart Repo
+    - repoURL: "https://github.com/mineblow/home-ops.git"
+      path: kubernetes/infrastructure/argocd
+      targetRevision: main
+      ref: repo
+    - repoURL: ghcr.io/argoproj/argo-helm
+      chart: argo-cd
       targetRevision: 7.8.5
       helm:
+        releaseName: argo-cd
         valueFiles:
-          - $values/kubernetes/infrastructure/argocd/values.yaml  # This tells ArgoCD to pull values from the Git source below
-
-    - repoURL: https://github.com/mineblow/home-ops.git  # Your Git repo containing values.yaml
-      targetRevision: main
-      ref: values
-
+          - $repo/kubernetes/infrastructure/argocd/values.yaml
   destination:
-    server: https://kubernetes.default.svc
-    namespace: argocd
-
+    name: in-cluster
+    namespace: argo-system
   syncPolicy:
     automated:
+      allowEmpty: true
       prune: true
       selfHeal: true
-
-  # ignoreDifferences:
-  #   - group: apps
-  #     kind: Deployment
-  #     jsonPointers:
-  #       - /spec/selector
+    syncOptions:
+    - CreateNamespace=true
