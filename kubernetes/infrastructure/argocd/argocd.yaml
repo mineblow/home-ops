@@ -5,14 +5,18 @@ metadata:
   namespace: argocd
 spec:
   project: default
-  source:
+  sources:
     - chart: argo-cd
       repoURL: https://argoproj.github.io/argo-helm  # Official Helm Chart Repo
       targetRevision: 7.8.5
       helm:
-        installCRDS:
-          - true  # This tells ArgoCD to pull values from the Git source below
+        valueFiles:
+          - $values/kubernetes/infrastructure/argocd/values.yaml  # This tells ArgoCD to pull values from the Git source below
 
+    - repoURL: https://github.com/mineblow/home-ops.git  # Your Git repo containing values.yaml
+      targetRevision: main
+      path: kubernetes/infrastructure/argocd  # Correct path where values.yaml is located
+      ref: values
 
   destination:
     server: https://kubernetes.default.svc
