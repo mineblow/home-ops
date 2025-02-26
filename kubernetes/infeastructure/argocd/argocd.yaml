@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - chart: argo-cd
+      repoURL: https://argoproj.github.io/argo-helm  # Official Helm Chart Repo
+      targetRevision: 7.8.5
+      helm:
+        valueFiles:
+          - $values/kubernetes/argocd/values.yaml  # This tells ArgoCD to pull values from the Git source below
+
+    - repoURL: https://github.com/mineblow/home-ops.git  # Your Git repo containing values.yaml
+      targetRevision: main
+      path: kubernetes/argocd  # Correct path where values.yaml is located
+      ref: values
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+
+  # ignoreDifferences:
+  #   - group: apps
+  #     kind: Deployment
+  #     jsonPointers:
+  #       - /spec/selector
