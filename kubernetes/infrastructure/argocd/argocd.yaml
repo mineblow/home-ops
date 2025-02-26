@@ -8,12 +8,12 @@ spec:
   source:
     - chart: argo-cd
       repoURL: https://argoproj.github.io/argo-helm  # Official Helm Chart Repo
-      targetRevision: 7.8.4
-       helm:
-          installCRDs:
-            enabled: true
-      #   valueFiles:
-      #     - $values/kubernetes/infrastructure/argocd/values.yaml  # This tells ArgoCD to pull values from the Git source below
+      targetRevision: 7.8.5
+      helm:
+        installCRDs:
+          enabled: true        
+        # valueFiles:
+        #   - $values/kubernetes/infrastructure/argocd/values.yaml  # This tells ArgoCD to pull values from the Git source below
 
     # - repoURL: https://github.com/mineblow/home-ops.git  # Your Git repo containing values.yaml
     #   targetRevision: main
