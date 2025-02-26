@@ -3,7 +3,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: argo
-  namespace: argo-system
+  namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: '0'
   labels:
@@ -24,7 +24,7 @@ spec:
           - $repo/kubernetes/infrastructure/argocd/values.yaml
   destination:
     name: in-cluster
-    namespace: argo-system
+    namespace: argocd
   syncPolicy:
     automated:
       allowEmpty: true
