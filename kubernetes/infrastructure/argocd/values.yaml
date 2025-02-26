@@ -2954,7 +2954,7 @@ applicationSet:
     # -- ApplicationSet service type
     type: ClusterIP
     # -- ApplicationSet service port
-    port: 7000
+    port: "7000, 8080"
     # -- ApplicationSet service port name
     portName: http-webhook
 
