@@ -11,11 +11,11 @@ spec:
       targetRevision: 7.8.5
       helm:
         valueFiles:
-          - $values/kubernetes/argocd/values.yaml  # This tells ArgoCD to pull values from the Git source below
+          - $values/kubernetes/infrastructure/argocd/values.yaml  # This tells ArgoCD to pull values from the Git source below
 
     - repoURL: https://github.com/mineblow/home-ops.git  # Your Git repo containing values.yaml
       targetRevision: main
-      path: kubernetes/argocd  # Correct path where values.yaml is located
+      path: kubernetes/infrastructure/argocd  # Correct path where values.yaml is located
       ref: values
 
   destination:
