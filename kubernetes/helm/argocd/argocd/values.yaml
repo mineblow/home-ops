@@ -43,7 +43,7 @@ argo-cd:
       applicationsetcontroller.policy: "create-only"
       controller.diff.server.side: "true"
     cm:
-      admin.enabled: "false"
+      admin.enabled: "true"
       url: https://argocd.k8s.mineblow.me
       exec.enabled: "true"
       resource:
