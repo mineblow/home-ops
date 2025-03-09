@@ -1,0 +1,23 @@
+# Server plan
+apiVersion: upgrade.cattle.io/v1
+kind: Plan
+metadata:
+  name: server-plan
+spec:
+  concurrency: 1
+  cordon: true
+  drain:
+    force: true
+    skipWaitForDeleteTimeout: 30
+  nodeSelector:
+    matchExpressions:
+    - key: node-role.kubernetes.io/master
+      operator: In
+      values:
+      - "true"
+    - key: node-role.kubernetes.io/master
+      operator: DoesNotExist
+  serviceAccountName: system-upgrade
+  upgrade:
+    image: rancher/k3s-upgrade
+  channel: https://update.k3s.io/v1-release/channels/stable

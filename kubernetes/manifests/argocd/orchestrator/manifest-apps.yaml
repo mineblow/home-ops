@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: manifest-apps
+  namespace: argocd
+spec:
+  generators:
+    - git:
+        repoURL: https://github.com/mineblow/home-ops.git
+        revision: HEAD
+        directories:
+          - path: "kubernetes/manifests/*/*"
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  template:
+    metadata:
+      name: "{{path.basenameNormalized}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/mineblow/home-ops.git
+        targetRevision: HEAD
+        path: "{{path}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{path[2]}}"
+      syncPolicy:
+        syncOptions:
+          - RespectIgnoreDifferences=true
+          - CreateNamespace=true
+          - ServerSideApply=true
+        automated:
+          prune: true
+          selfHeal: true

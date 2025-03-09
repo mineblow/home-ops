@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-public-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    external-dns.home.arpa/enabled: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.org/websocket-services: "argocd-server"
+spec:
+  tls:
+    - hosts:
+        - argocd-public.k8s.mineblow.me
+      secretName: argocd-public-mineblow-me
+  rules:
+    - host: argocd-public.k8s.mineblow.me
+      http:
+        paths:
+          - path: /api/webhook
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  name: https

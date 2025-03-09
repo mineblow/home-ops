@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: adblock-updater
+spec:
+  schedule: "0 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: adblock-updater
+            image: centos
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - name: coredns-blacklist
+                mountPath: /blacklist/
+            command:
+            - /bin/sh
+            - -c
+            - curl https://raw.githubusercontent.com/mineblow/home-ops/master/kubernetes/helm/networking/coredns/manifests/scripts/download_blacklists.sh | /bin/sh
+          restartPolicy: OnFailure
+          volumes:
+            - name: coredns-blacklist
+              persistentVolumeClaim:
+                claimName: coredns-blacklist
+                readOnly: false

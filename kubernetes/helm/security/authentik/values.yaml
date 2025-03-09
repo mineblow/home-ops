@@ -1,0 +1,96 @@
+authentik:
+  worker:
+    replicas: 2
+    pdb:
+      enabled: true
+
+  server:
+    replicas: 2
+    priorityClassName: system-cluster-critical
+
+    pdb:
+      enabled: true
+
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+      rules:
+        enabled: true
+
+    ingress:
+      enabled: true
+      annotations:
+        external-dns.home.arpa/enabled: "true"
+      hosts:
+        - authentik.k8s.mineblow.me
+      tls:
+        - secretName: authentik-letsencrypt-certificate
+          hosts:
+            - authentik.k8s.mineblow.me
+
+  global:
+    # Check that env variable isn't provided in normal env map. Sync will fail if it's duplicated
+    env:
+      - name: AUTHENTIK_POSTGRESQL__PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: authentik-database-app
+            key: password
+      - name: AUTHENTIK_BOOTSTRAP_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: security-authentik-secrets
+            key: bootstrap-token
+      - name: AUTHENTIK_BOOTSTRAP_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: security-authentik-secrets
+            key: bootstrap-password
+      - name: AUTHENTIK_SECRET_KEY
+        valueFrom:
+          secretKeyRef:
+            name: security-authentik-secrets
+            key: secret-key
+      - name: AUTHENTIK_EMAIL__HOST
+        valueFrom:
+          configMapKeyRef:
+            name: authentik-email
+            key: host
+      - name: AUTHENTIK_EMAIL__FROM
+        valueFrom:
+          configMapKeyRef:
+            name: authentik-email
+            key: from
+      - name: AUTHENTIK_EMAIL__USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: security-authentik-secrets
+            key: email-username
+      - name: AUTHENTIK_EMAIL__PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: security-authentik-secrets
+            key: email-password
+      - name: AUTHENTIK_REDIS__PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: &redis-secret redis-password-secret
+            key: redis-password
+      - name: AUTHENTIK_COOKIE_DOMAIN
+        value: mineblow.me
+      - name: AUTHENTIK_POSTGRESQL__HOST
+        value: authentik-database-rw
+
+redis:
+  enabled: true
+  architecture: replication
+  global:
+    defaultStorageClass: local-path
+  auth:
+    enabled: true
+    existingSecret: *redis-secret
+
+
+postgresql:
+  enabled: false

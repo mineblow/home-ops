@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-email
+data:
+  from: "authentik@mineblow.me"
+  host: "in-v3.mailjet.com"
