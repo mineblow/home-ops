@@ -66,29 +66,29 @@ argo-cd:
                 - .spec.template.spec.containers[].volumeMounts | select(.name == "timezone")
                 - .spec.template.volumes[] | select(.name == "timezone")
 
-        exclusions: |
-          - apiGroups:
-              - kyverno.io
-            kinds:
-              - AdmissionReport
-              - BackgroundScanReport
-              - ClusterAdmissionReport
-              - ClusterBackgroundScanReport
-            clusters:
-              - '*'
-        compareoptions: |
-          ignoreAggregatedRoles: true
-          ignoreResourceStatusField: crd
-      oidc.config: |
-        name: Authentik
-        issuer: "https://authentik.k8s.mineblow.me/application/o/argocd/"
-        clientID: $argocd-oidc-secrets:oidc.authentik.client_id
-        clientSecret: $argocd-oidc-secrets:oidc.authentik.client_secret
-        requestedScopes:
-          - openid
-          - profile
-          - email
-        oidc.tls.insecure.skip.verify: true
+      #   exclusions: |
+      #     - apiGroups:
+      #         - kyverno.io
+      #       kinds:
+      #         - AdmissionReport
+      #         - BackgroundScanReport
+      #         - ClusterAdmissionReport
+      #         - ClusterBackgroundScanReport
+      #       clusters:
+      #         - '*'
+      #   compareoptions: |
+      #     ignoreAggregatedRoles: true
+      #     ignoreResourceStatusField: crd
+      # oidc.config: |
+      #   name: Authentik
+      #   issuer: "https://authentik.k8s.mineblow.me/application/o/argocd/"
+      #   clientID: $argocd-oidc-secrets:oidc.authentik.client_id
+      #   clientSecret: $argocd-oidc-secrets:oidc.authentik.client_secret
+      #   requestedScopes:
+      #     - openid
+      #     - profile
+      #     - email
+      #   oidc.tls.insecure.skip.verify: true
 
   rbac:
     policy.csv: |
