@@ -1,0 +1,6 @@
+cloudnative-pg:
+  replicaCount: 3
+  config:
+    INHERITED_LABELS: instance, name
+
+  priorityClassName: system-cluster-critical
