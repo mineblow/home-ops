@@ -26,11 +26,11 @@ kube-prometheus-stack:
     ingress:
       enabled: true
       hosts:
-        - alert-manager.k8s.tylercash.dev
+        - alert-manager.k8s.mineblow.me
       tls:
         - secretName: alert-manager-letsencrypt-certificate
           hosts:
-            - alert-manager.k8s.tylercash.dev
+            - alert-manager.k8s.mineblow.me
   grafana:
     fullNameOverride: grafana
     defaultDashboardsTimezone: Australia/Sydney
@@ -148,10 +148,10 @@ kube-prometheus-stack:
       grafana_net:
         url: https://grafana.net
       server:
-        domain: "grafana.k8s.tylercash.dev"
-        root_url: "https://grafana.k8s.tylercash.dev/"
+        domain: "grafana.k8s.mineblow.me"
+        root_url: "https://grafana.k8s.mineblow.me/"
       auth:
-        signout_redirect_url: https://authentik.k8s.tylercash.dev/application/o/grafana/end-session/
+        signout_redirect_url: https://authentik.k8s.mineblow.me/application/o/grafana/end-session/
         oauth_auto_login: true
         disable_login_form: true
       users:
@@ -168,9 +168,9 @@ kube-prometheus-stack:
         client_id: $__file{/etc/secrets/auth_generic_oauth/client_id}
         client_secret: $__file{/etc/secrets/auth_generic_oauth/client_secret}
         scopes: openid email profile
-        auth_url: https://authentik.k8s.tylercash.dev/application/o/authorize/
-        token_url: https://authentik.k8s.tylercash.dev/application/o/token/
-        api_url: https://authentik.k8s.tylercash.dev/application/o/userinfo/
+        auth_url: https://authentik.k8s.mineblow.me/application/o/authorize/
+        token_url: https://authentik.k8s.mineblow.me/application/o/token/
+        api_url: https://authentik.k8s.mineblow.me/application/o/userinfo/
         tls_skip_verify_insecure: true
         role_attribute_path: contains(groups[*], 'grafana_admin') && 'Admin' || contains(groups[*], 'admin') && 'Admin' || contains(groups[*], 'grafana') && 'Viewer'
     ingress:
@@ -178,11 +178,11 @@ kube-prometheus-stack:
       annotations:
         nginx.org/websocket-services: "prometheus-grafana"
       hosts:
-        - grafana.k8s.tylercash.dev
+        - grafana.k8s.mineblow.me
       tls:
         - secretName: grafana-letsencrypt-certificate
           hosts:
-            - grafana.k8s.tylercash.dev
+            - grafana.k8s.mineblow.me
   prometheus:
     fullNameOverride: prometheus
     prometheusSpec:
@@ -216,11 +216,11 @@ kube-prometheus-stack:
         kubernetes.io/ingress.class: "nginx"
         nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8"
       hosts:
-        - prometheus.k8s.tylercash.dev
+        - prometheus.k8s.mineblow.me
       tls:
         - secretName: prometheus-letsencrypt-certificate
           hosts:
-            - prometheus.k8s.tylercash.dev
+            - prometheus.k8s.mineblow.me
   prometheusOperator:
     admissionWebhooks:
       certManager:
