@@ -260,7 +260,7 @@ rook-ceph-cluster:
     - name: ceph-filesystem-hdd-speed
       spec:
         metadataPool:
-          deviceClass: hdd
+          deviceClass: ssd
           replicated:
             size: 3
         dataPools:
