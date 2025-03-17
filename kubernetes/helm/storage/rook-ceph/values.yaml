@@ -108,7 +108,7 @@ rook-ceph-cluster:
   cephBlockPools:
     - name: ceph-blockpool
       spec:
-        deviceClass: ssd
+        deviceClass: hdd
         failureDomain: host
         replicated:
           size: 3
@@ -146,7 +146,7 @@ rook-ceph-cluster:
 
     - name: ceph-block-metadata
       spec:
-        deviceClass: ssd
+        deviceClass: hdd
         failureDomain: host
         replicated:
           size: 3
@@ -179,7 +179,7 @@ rook-ceph-cluster:
     - name: ceph-filesystem
       spec:
         metadataPool:
-          deviceClass: ssd
+          deviceClass: hdd
           replicated:
             size: 3
         dataPools:
@@ -188,7 +188,7 @@ rook-ceph-cluster:
             replicated:
               size: 3
           - name: data0
-            deviceClass: ssd
+            deviceClass: hdd
             failureDomain: host
             erasureCoded:
               dataChunks: 2
@@ -220,7 +220,7 @@ rook-ceph-cluster:
     - name: ceph-filesystem-hdd
       spec:
         metadataPool:
-          deviceClass: ssd
+          deviceClass: hdd
           replicated:
             size: 3
         dataPools:
