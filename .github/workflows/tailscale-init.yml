@@ -1,0 +1,53 @@
+name: Setup Tailscale via GCP Secret
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: false
+        type: string
+        default: "tag:github-ci"
+      hostname:
+        required: false
+        type: string
+        default: "github-ci-runner"
+    secrets:
+      GCP_SERVICE_ACCOUNT_JSON:
+        required: true
+
+jobs:
+  connect-tailscale:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: 🔐 Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+
+      - name: ☁️ Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v1
+
+      - name: 🔓 Extract Tailscale credentials from GCP Secret
+        run: |
+          RAW_SECRET=$(gcloud secrets versions access latest --secret=all_secrets)
+
+          if echo "$RAW_SECRET" | grep -q '^"'; then
+            PARSED_JSON=$(echo "$RAW_SECRET" | jq -r | jq .)
+          else
+            PARSED_JSON="$RAW_SECRET"
+          fi
+
+          echo "TAILSCALE_CLIENT_ID=$(echo "$PARSED_JSON" | jq -r '.tailscale.TS_OAUTH_CLIENT_ID')" >> "$GITHUB_ENV"
+          echo "TAILSCALE_CLIENT_SECRET=$(echo "$PARSED_JSON" | jq -r '.tailscale.TS_OAUTH_CLIENT_SECRET')" >> "$GITHUB_ENV"
+
+      - name: 🔐 Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ env.TAILSCALE_CLIENT_ID }}
+          oauth-secret: ${{ env.TAILSCALE_CLIENT_SECRET }}
+          tags: ${{ inputs.tag }}
+          hostname: ${{ inputs.hostname }}
