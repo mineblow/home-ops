@@ -1,0 +1,25 @@
+name: Test Tailscale Connection from GitHub Actions
+
+on:
+  workflow_dispatch:
+
+jobs:
+  tailscale-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🧾 Checkout repo
+        uses: actions/checkout@v3
+
+      - name: 🔐 Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          tags: tag:github-ci
+          hostname: github-ci-runner
+
+      - name: 🧪 Ping internal Proxmox server
+        run: ping -c 3 mineblow-laptop.stern-turtle.ts.net
+
+      - name: 🧹 Disconnect from Tailscale (auto-cleanup)
+        run: echo "Runner will auto-expire (ephemeral)"
