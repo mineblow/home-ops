@@ -3,17 +3,26 @@ name: Weekly Packer Build (Ubuntu 24.04)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 5 * * 1'  # Every Monday at 5 AM UTC
+    - cron: '0 5 * * 1'
 
 jobs:
+  tailscale-connect:
+    uses: ./.github/workflows/tailscale-init.yml
+    with:
+      tag: tag:github-ci
+      hostname: packer-builder
+    secrets:
+      GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+
   packer-build:
+    needs: tailscale-connect
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
 
     steps:
-      - name: 📂 Checkout repo
+      - name: 🧾 Checkout
         uses: actions/checkout@v3
 
       - name: 🔐 Authenticate to GCP
@@ -21,27 +30,25 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
 
-      - name: ☁️ Set up gcloud
+      - name: ☁️ Setup gcloud
         uses: google-github-actions/setup-gcloud@v1
 
-      - name: 🧐 Extract Proxmox secrets from GCP
+      - name: 🧠 Extract Proxmox secrets from GCP
         run: |
           RAW=$(gcloud secrets versions access latest --secret=all_secrets)
-
           if echo "$RAW" | grep -q '^"'; then
             JSON=$(echo "$RAW" | jq -r | jq .)
           else
             JSON="$RAW"
           fi
-
           echo "PROXMOX_URL=$(echo $JSON | jq -r '.proxmox.proxmox_api_url')" >> $GITHUB_ENV
           echo "PROXMOX_USER=$(echo $JSON | jq -r '.proxmox.proxmox_terraform_api_token_id')" >> $GITHUB_ENV
           echo "PROXMOX_TOKEN=$(echo $JSON | jq -r '.proxmox.proxmox_terraform_api_token_secret')" >> $GITHUB_ENV
 
-      - name: 🚀 Set up Packer
+      - name: ⚙️ Setup Packer
         uses: hashicorp/setup-packer@v2
 
-      - name: 🚧 Build Ubuntu 24.04 Proxmox Template
+      - name: 🛠️ Build Proxmox Template
         run: |
           packer init packer/templates/ubuntu-24.04-cloudinit.json
           packer build \
