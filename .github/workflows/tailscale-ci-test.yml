@@ -15,7 +15,6 @@ jobs:
       - name: 🧾 Checkout repository
         uses: actions/checkout@v3
 
-      # Authenticate to GCP with service account JSON from GitHub Secrets
       - name: 🔐 Authenticate to Google Cloud
         uses: google-github-actions/auth@v1
         with:
@@ -24,13 +23,20 @@ jobs:
       - name: ☁️ Set up gcloud CLI
         uses: google-github-actions/setup-gcloud@v1
 
-      # Fetch and parse all_secrets JSON blob from GCP
-      - name: 🔓 Extract Tailscale credentials from GCP Secret
+      - name: 🔓 Extract Tailscale credentials securely
         id: secrets
         run: |
-          SECRET_JSON=$(gcloud secrets versions access latest --secret=all_secrets)
-          echo "TAILSCALE_CLIENT_ID=$(echo \"$SECRET_JSON\" | jq -r '.tailscale.TS_OAUTH_CLIENT_ID')" >> "$GITHUB_ENV"
-          echo "TAILSCALE_CLIENT_SECRET=$(echo \"$SECRET_JSON\" | jq -r '.tailscale.TS_OAUTH_CLIENT_SECRET')" >> "$GITHUB_ENV"
+          RAW_SECRET=$(gcloud secrets versions access latest --secret=all_secrets)
+
+          # Detect if secret is a stringified blob
+          if echo "$RAW_SECRET" | grep -q '^"'; then
+            PARSED_JSON=$(echo "$RAW_SECRET" | jq -r | jq .)
+          else
+            PARSED_JSON="$RAW_SECRET"
+          fi
+
+          echo "TAILSCALE_CLIENT_ID=$(echo "$PARSED_JSON" | jq -r '.tailscale.TS_OAUTH_CLIENT_ID')" >> "$GITHUB_ENV"
+          echo "TAILSCALE_CLIENT_SECRET=$(echo "$PARSED_JSON" | jq -r '.tailscale.TS_OAUTH_CLIENT_SECRET')" >> "$GITHUB_ENV"
 
       - name: 🔐 Connect to Tailscale
         uses: tailscale/github-action@v2
