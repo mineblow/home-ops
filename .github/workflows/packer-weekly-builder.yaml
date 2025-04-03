@@ -1,9 +1,9 @@
-name: Weekly Packer Build (Ubuntu 24.04)
+name: Monthly Packer Build (Ubuntu 24.04)
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 5 * * 1'
+    - cron: '0 5 1 * *'  # 1st of every month @ 5AM UTC
 
 jobs:
   tailscale-connect:
@@ -25,7 +25,7 @@ jobs:
       id-token: write
 
     steps:
-      - name: 🧾 Checkout
+      - name: 📎 Checkout
         uses: actions/checkout@v3
 
       - name: 🔐 Authenticate to GCP
@@ -51,11 +51,32 @@ jobs:
       - name: ⚙️ Setup Packer
         uses: hashicorp/setup-packer@v2
 
-      - name: 🛠️ Build Proxmox Template
+      - name: 🚧 Build Proxmox Template
         run: |
-          packer init packer/templates/ubuntu-24.04-cloudinit.json
+          packer init packer/templates
           packer build \
             -var proxmox_url="$PROXMOX_URL" \
             -var proxmox_username="$PROXMOX_USER" \
             -var proxmox_token="$PROXMOX_TOKEN" \
-            packer/templates/ubuntu-24.04-cloudinit.json
+            packer/templates
+
+      - name: 🧹 Prune Old Proxmox Templates (Keep 5)
+        run: |
+          echo "🦜 Fetching template list from Proxmox API..."
+
+          TOKEN=$(curl -sk -d "username=$PROXMOX_USER&password=$PROXMOX_TOKEN" \
+            "$PROXMOX_URL/access/ticket" | jq -r '.data.ticket')
+
+          CSRF=$(curl -sk -d "username=$PROXMOX_USER&password=$PROXMOX_TOKEN" \
+            "$PROXMOX_URL/access/ticket" | jq -r '.data.CSRFPreventionToken')
+
+          echo "🧹 Listing existing template VMs..."
+          TEMPLATE_LIST=$(curl -sk -b "PVEAuthCookie=$TOKEN" "$PROXMOX_URL/nodes/proxmox/qemu" | \
+            jq -r '.data[] | select(.template == 1 and .name | startswith("ubuntu-24.04-cloudinit")) | "\(.vmid) \(.name) \(.ctime)"' | \
+            sort -k3 -nr)
+
+          echo "$TEMPLATE_LIST" | tail -n +6 | while read -r VMID NAME _; do
+            echo "🔥 Deleting old template: $NAME (VMID $VMID)"
+            curl -sk -X DELETE -b "PVEAuthCookie=$TOKEN" -H "CSRFPreventionToken: $CSRF" \
+              "$PROXMOX_URL/nodes/proxmox/qemu/$VMID"
+          done
