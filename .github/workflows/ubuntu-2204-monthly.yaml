@@ -1,0 +1,65 @@
+name: Monthly Proxmox Template Builder
+
+on:
+  schedule:
+    - cron: '0 5 1 * *'  # 1st of every month @ 5AM UTC
+  workflow_dispatch:
+
+jobs:
+  build-proxmox-template:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: 📎 Checkout
+        uses: actions/checkout@v3
+
+      - name: 🔐 Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+
+      - name: ☁️ Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v1
+
+      - name: 🧠 Extract secrets from GCP Secret Manager
+        run: |
+          RAW=$(gcloud secrets versions access latest --secret=all_secrets)
+          if echo "$RAW" | grep -q '^"'; then
+            JSON=$(echo "$RAW" | jq -r | jq .)
+          else
+            JSON="$RAW"
+          fi
+
+          echo "TAILSCALE_CLIENT_ID=$(echo "$JSON" | jq -r '.TS_OAUTH_CLIENT_ID')" >> $GITHUB_ENV
+          echo "TAILSCALE_CLIENT_SECRET=$(echo "$JSON" | jq -r '.TS_OAUTH_CLIENT_SECRET')" >> $GITHUB_ENV
+          echo "PROXMOX_HOST=$(echo "$JSON" | jq -r '.proxmox.host')" >> $GITHUB_ENV
+          echo "$(echo "$JSON" | jq -r '.proxmox_automation_ssh_key' | base64 -d)" > proxmox.key
+          chmod 600 proxmox.key
+
+      - name: 🌐 Start Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ env.TAILSCALE_CLIENT_ID }}
+          oauth-secret: ${{ env.TAILSCALE_CLIENT_SECRET }}
+          hostname: template-runner
+          tags: tag:github-ci
+
+      - name: 📤 Copy latest script to Proxmox host
+        run: |
+          scp -i proxmox.key -o StrictHostKeyChecking=no ./scripts/ubuntu-2204-template.sh \
+            auto@${PROXMOX_HOST}:/home/auto/scripts/ubuntu-2204-template.sh
+
+          ssh -i proxmox.key -o StrictHostKeyChecking=no auto@${PROXMOX_HOST} \
+            "sudo chmod +x /home/auto/scripts/ubuntu-2204-template.sh"
+
+      - name: 🚀 Run Template Builder Script via SSH
+        run: |
+          ssh -i proxmox.key -o StrictHostKeyChecking=no auto@${PROXMOX_HOST} \
+            "sudo /home/auto/scripts/ubuntu-2204-template.sh"
+
+      - name: 🧹 Cleanup
+        if: always()
+        run: rm -f proxmox.key
