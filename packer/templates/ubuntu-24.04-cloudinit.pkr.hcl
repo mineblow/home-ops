@@ -34,11 +34,11 @@ source "proxmox" "ubuntu_cloudinit" {
   ssh_password    = "changeme"
   ssh_wait_timeout = "10m"
 
-  disks = [{
+  disks {
     storage_pool = "local-zfs"
     disk_size    = "10G"
     format       = "raw"
-  }]
+  }
 }
 
 build {
