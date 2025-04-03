@@ -65,12 +65,12 @@ jobs:
             auto@${PROXMOX_HOST}:/home/auto/scripts/ubuntu-2204-template.sh
 
           ssh -tt -i proxmox.key -o StrictHostKeyChecking=no auto@${PROXMOX_HOST} \
-            "sudo chmod +x /home/auto/scripts/ubuntu-2204-template.sh"
+            "sudo -n chmod +x /home/auto/scripts/ubuntu-2204-template.sh"
 
       - name: 🚀 Run Template Builder Script via SSH
         run: |
           ssh -tt -i proxmox.key -o StrictHostKeyChecking=no auto@${PROXMOX_HOST} \
-            "sudo /home/auto/scripts/ubuntu-2204-template.sh"
+            "sudo -n /home/auto/scripts/ubuntu-2204-template.sh"
 
       - name: 🧹 Cleanup
         if: always()
