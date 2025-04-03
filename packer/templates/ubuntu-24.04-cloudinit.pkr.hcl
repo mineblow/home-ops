@@ -16,7 +16,7 @@ locals {
   image_name = "ubuntu-24.04-cloudinit-${local.timestamp}"
 }
 
-source "proxmox" "ubuntu_cloudinit" {
+source "proxmox-iso" "ubuntu_cloudinit" {
   proxmox_url     = var.proxmox_url
   username        = var.proxmox_username
   token           = var.proxmox_token
@@ -25,24 +25,27 @@ source "proxmox" "ubuntu_cloudinit" {
   node            = "proxmox"
   template_name   = local.image_name
 
-  iso_url         = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
-  iso_checksum    = "auto"
-
-  cloud_init      = true
-  http_directory  = "http"
-  ssh_username    = "ubuntu"
-  ssh_password    = "changeme"
-  ssh_wait_timeout = "10m"
+  boot_iso {
+    url = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+    checksum = "none"
+    storage_pool = "local-zfs"
+  }
 
   disks {
     storage_pool = "local-zfs"
     disk_size    = "10G"
     format       = "raw"
   }
+
+  cloud_init         = true
+  http_directory     = "http"
+  ssh_username       = "ubuntu"
+  ssh_password       = "changeme"
+  ssh_wait_timeout   = "10m"
 }
 
 build {
-  sources = ["source.proxmox.ubuntu_cloudinit"]
+  sources = ["source.proxmox-iso.ubuntu_cloudinit"]
 
   provisioner "shell" {
     inline = [
