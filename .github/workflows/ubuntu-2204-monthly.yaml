@@ -13,7 +13,7 @@ jobs:
       id-token: write
 
     steps:
-      - name: 📎 Checkout
+      - name: 📎 Checkout repo
         uses: actions/checkout@v3
 
       - name: 🔐 Authenticate to Google Cloud
@@ -33,10 +33,11 @@ jobs:
             JSON="$RAW"
           fi
 
-          echo "TAILSCALE_CLIENT_ID=$(echo "$JSON" | jq -r '.TS_OAUTH_CLIENT_ID')" >> $GITHUB_ENV
-          echo "TAILSCALE_CLIENT_SECRET=$(echo "$JSON" | jq -r '.TS_OAUTH_CLIENT_SECRET')" >> $GITHUB_ENV
-          echo "PROXMOX_HOST=$(echo "$JSON" | jq -r '.proxmox.host')" >> $GITHUB_ENV
-          echo "$(echo "$JSON" | jq -r '.proxmox_automation_ssh_key' | base64 -d)" > proxmox.key
+          echo "TAILSCALE_CLIENT_ID=$(echo "$JSON" | jq -r '.tailscale.TS_OAUTH_CLIENT_ID')" >> "$GITHUB_ENV"
+          echo "TAILSCALE_CLIENT_SECRET=$(echo "$JSON" | jq -r '.tailscale.TS_OAUTH_CLIENT_SECRET')" >> "$GITHUB_ENV"
+          echo "PROXMOX_HOST=$(echo "$JSON" | jq -r '.proxmox.proxmox_api_url' | sed 's|https://||; s|:.*||')" >> "$GITHUB_ENV"
+
+          echo "$JSON" | jq -r '.proxmox.proxmox_automation_ssh_key' | base64 -d > proxmox.key
           chmod 600 proxmox.key
 
       - name: 🌐 Start Tailscale
