@@ -1,4 +1,4 @@
-name: Monthly Proxmox Template Builder
+name: Monthly Proxmox Ubuntu Template Builder
 
 on:
   schedule:
@@ -24,7 +24,8 @@ jobs:
       - name: ☁️ Set up gcloud CLI
         uses: google-github-actions/setup-gcloud@v1
 
-      - name: 🧠 Extract secrets from GCP Secret Manager
+      - name: 🧠 Extract and mask secrets from GCP Secret Manager
+        id: secrets
         run: |
           RAW=$(gcloud secrets versions access latest --secret=all_secrets)
           if echo "$RAW" | grep -q '^"'; then
@@ -33,11 +34,21 @@ jobs:
             JSON="$RAW"
           fi
 
-          echo "TAILSCALE_CLIENT_ID=$(echo "$JSON" | jq -r '.tailscale.TS_OAUTH_CLIENT_ID')" >> "$GITHUB_ENV"
-          echo "TAILSCALE_CLIENT_SECRET=$(echo "$JSON" | jq -r '.tailscale.TS_OAUTH_CLIENT_SECRET')" >> "$GITHUB_ENV"
-          echo "PROXMOX_HOST=$(echo "$JSON" | jq -r '.proxmox.proxmox_api_url' | sed 's|https://||; s|:.*||')" >> "$GITHUB_ENV"
+          # Extract & mask secrets
+          CLIENT_ID=$(echo "$JSON" | jq -r '.tailscale.TS_OAUTH_CLIENT_ID')
+          CLIENT_SECRET=$(echo "$JSON" | jq -r '.tailscale.TS_OAUTH_CLIENT_SECRET')
+          PROXMOX_HOST=$(echo "$JSON" | jq -r '.proxmox.proxmox_api_url' | sed 's|https://||; s|:.*||')
+          SSH_KEY=$(echo "$JSON" | jq -r '.proxmox.proxmox_automation_ssh_key')
 
-          echo "$JSON" | jq -r '.proxmox.proxmox_automation_ssh_key' | base64 -d > proxmox.key
+          echo "::add-mask::$CLIENT_ID"
+          echo "::add-mask::$CLIENT_SECRET"
+          echo "::add-mask::$PROXMOX_HOST"
+
+          echo "TAILSCALE_CLIENT_ID=$CLIENT_ID" >> "$GITHUB_ENV"
+          echo "TAILSCALE_CLIENT_SECRET=$CLIENT_SECRET" >> "$GITHUB_ENV"
+          echo "PROXMOX_HOST=$PROXMOX_HOST" >> "$GITHUB_ENV"
+
+          echo "$SSH_KEY" | base64 -d > proxmox.key
           chmod 600 proxmox.key
 
       - name: 🌐 Start Tailscale
