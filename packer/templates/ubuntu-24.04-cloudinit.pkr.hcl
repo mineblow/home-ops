@@ -7,12 +7,12 @@ packer {
   }
 }
 
-variable "proxmox_url"     { type = string }
+variable "proxmox_url"      { type = string }
 variable "proxmox_username" { type = string }
 variable "proxmox_token"    { type = string }
 
 locals {
-  timestamp = formatdate("2006-01-02", timestamp())
+  timestamp  = formatdate("2006-01-02", timestamp())
   image_name = "ubuntu-24.04-cloudinit-${local.timestamp}"
 }
 
@@ -24,17 +24,21 @@ source "proxmox" "ubuntu_cloudinit" {
 
   node            = "proxmox"
   template_name   = local.image_name
-  storage_pool    = "local-zfs"
 
   iso_url         = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
   iso_checksum    = "auto"
 
   cloud_init      = true
   http_directory  = "http"
-
   ssh_username    = "ubuntu"
   ssh_password    = "changeme"
   ssh_wait_timeout = "10m"
+
+  disks = [{
+    storage_pool = "local-zfs"
+    disk_size    = "10G"
+    format       = "raw"
+  }]
 }
 
 build {
