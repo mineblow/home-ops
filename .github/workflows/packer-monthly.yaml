@@ -6,19 +6,7 @@ on:
     - cron: '0 5 1 * *'  # 1st of every month @ 5AM UTC
 
 jobs:
-  tailscale-connect:
-    uses: ./.github/workflows/tailscale-init.yml
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      tag: tag:github-ci
-      hostname: packer-builder
-    secrets:
-      GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
-
   packer-build:
-    needs: tailscale-connect
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,7 +24,7 @@ jobs:
       - name: ☁️ Setup gcloud
         uses: google-github-actions/setup-gcloud@v1
 
-      - name: 🧠 Extract Proxmox secrets from GCP
+      - name: 🧠 Extract Proxmox & Tailscale Secrets
         run: |
           RAW=$(gcloud secrets versions access latest --secret=all_secrets)
           if echo "$RAW" | grep -q '^"'; then
@@ -47,6 +35,16 @@ jobs:
           echo "PROXMOX_URL=$(echo $JSON | jq -r '.proxmox.proxmox_api_url')" >> $GITHUB_ENV
           echo "PROXMOX_USER=$(echo $JSON | jq -r '.proxmox.proxmox_terraform_api_token_id')" >> $GITHUB_ENV
           echo "PROXMOX_TOKEN=$(echo $JSON | jq -r '.proxmox.proxmox_terraform_api_token_secret')" >> $GITHUB_ENV
+          echo "TAILSCALE_CLIENT_ID=$(echo $JSON | jq -r '.tailscale.TS_OAUTH_CLIENT_ID')" >> $GITHUB_ENV
+          echo "TAILSCALE_CLIENT_SECRET=$(echo $JSON | jq -r '.tailscale.TS_OAUTH_CLIENT_SECRET')" >> $GITHUB_ENV
+
+      - name: 🔌 Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ env.TAILSCALE_CLIENT_ID }}
+          oauth-secret: ${{ env.TAILSCALE_CLIENT_SECRET }}
+          tags: tag:github-ci
+          hostname: packer-builder
 
       - name: ⚙️ Setup Packer
         uses: hashicorp/setup-packer@v2
