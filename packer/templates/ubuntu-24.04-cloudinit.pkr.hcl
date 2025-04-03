@@ -1,8 +1,8 @@
 packer {
   required_plugins {
     proxmox = {
-      source  = "github.com/lbrlabs/proxmox"
-      version = ">= 0.1.0"
+      version = ">= 1.2.2"
+      source  = "github.com/hashicorp/proxmox"
     }
   }
 }
@@ -24,7 +24,7 @@ source "proxmox" "ubuntu_cloudinit" {
 
   node            = "proxmox"
   template_name   = local.image_name
-  storage_pool_id = "local-zfs"
+  storage_pool    = "local-zfs"
 
   iso_url         = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
   iso_checksum    = "auto"
