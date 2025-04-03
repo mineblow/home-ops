@@ -24,7 +24,7 @@ source "proxmox" "ubuntu_cloudinit" {
 
   node            = "proxmox"
   template_name   = local.image_name
-  storage_pool    = "local-zfs"
+  disk_storage = "local-zfs"
 
   iso_url         = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
   iso_checksum    = "auto"
