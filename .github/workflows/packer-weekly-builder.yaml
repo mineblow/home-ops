@@ -8,6 +8,9 @@ on:
 jobs:
   tailscale-connect:
     uses: ./.github/workflows/tailscale-init.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       tag: tag:github-ci
       hostname: packer-builder
