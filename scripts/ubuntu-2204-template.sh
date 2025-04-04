@@ -120,7 +120,6 @@ echo "ℹ️ Validate cloud-init success by cloning and testing the template man
 
 # ----------- [🪄 FINALIZE] -----------
 qm set "$VMID" --autostart off
-qm resize "$VMID" "$CI_DISK" +10G || true
 qm template "$VMID"
 qm set "$VMID" --tags "cloudinit,ubuntu,auto-built"
 
