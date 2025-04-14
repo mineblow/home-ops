@@ -67,7 +67,9 @@ jobs:
       - name: 🌐 Wait for Tailscale to connect
         run: |
           for i in {1..5}; do
-            tailscale status && break
+            if tailscale status >/dev/null 2>&1; then
+              break
+            fi
             echo "⏳ Waiting for Tailscale..."
             sleep 5
           done
@@ -110,10 +112,10 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          scripts=(./scripts/*template.sh)
+          scripts=(.scripts/*template.sh)
 
           if [[ ${#scripts[@]} -eq 0 ]]; then
-            echo "❌ No matching template scripts found in ./scripts/"
+            echo "❌ No matching template scripts found in .scripts/"
             exit 1
           fi
 
@@ -136,10 +138,10 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          scripts=(./scripts/*template.sh)
+          scripts=(.scripts/*template.sh)
 
           if [[ ${#scripts[@]} -eq 0 ]]; then
-            echo "❌ No matching template scripts found in ./scripts/"
+            echo "❌ No matching template scripts found in .scripts/"
             exit 1
           fi
 
