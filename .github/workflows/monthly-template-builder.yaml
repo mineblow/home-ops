@@ -5,6 +5,7 @@ on:
   schedule:
     - cron: '0 5 1 * *'  # 1st of every month @ 5AM UTC
   workflow_dispatch:
+    inputs: {}
 
 jobs:
   build-templates:
