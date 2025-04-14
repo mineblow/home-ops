@@ -108,8 +108,16 @@ jobs:
       - name: 📤 Copy all builder scripts to Proxmox host
         run: |
           set -euo pipefail
+          shopt -s nullglob
 
-          for script in ./scripts/*template.sh; do
+          scripts=(./scripts/*template.sh)
+
+          if [[ ${#scripts[@]} -eq 0 ]]; then
+            echo "❌ No matching template scripts found in ./scripts/"
+            exit 1
+          fi
+
+          for script in "${scripts[@]}"; do
             echo "📤 Copying $script"
             scp -i proxmox.key -o StrictHostKeyChecking=no "$script" auto@$PROXMOX_HOST:/home/auto/scripts/ || {
               echo "❌ SCP failed for $script"
@@ -126,8 +134,16 @@ jobs:
       - name: 🚀 Execute all builder scripts
         run: |
           set -euo pipefail
+          shopt -s nullglob
 
-          for script in ./scripts/*template.sh; do
+          scripts=(./scripts/*template.sh)
+
+          if [[ ${#scripts[@]} -eq 0 ]]; then
+            echo "❌ No matching template scripts found in ./scripts/"
+            exit 1
+          fi
+
+          for script in "${scripts[@]}"; do
             name=$(basename "$script")
             echo "🚀 Running $name"
             ssh -o BatchMode=yes -i proxmox.key -o StrictHostKeyChecking=no auto@$PROXMOX_HOST \
