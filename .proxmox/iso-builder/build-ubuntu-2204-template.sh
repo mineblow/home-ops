@@ -6,18 +6,21 @@ set -euo pipefail
 # ─────────────────────────────────────────
 VMID_START=9000
 VMID_END=9005
-MAX_TEMPLATES=5
-TEMPLATE_PREFIX="ubuntu-24.04-cloudinit"
-ISO_URL="https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
-ISO_NAME="ubuntu-24.04-cloudimg-amd64.img"
+TEMPLATE_PREFIX="ubuntu-22.04-cloudinit"
+ISO_URL="https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+ISO_NAME="ubuntu-22.04-cloudimg-amd64.img"
 ISO_PATH="/var/lib/vz/template/iso/${ISO_NAME}"
-ISO_META_PATH="${ISO_PATH}.meta"
 STORAGE_POOL="local-zfs"
 CI_DISK="scsi0"
-NODE="proxmox"
 TODAY=$(date +%Y-%m-%d)
+
+# VM name includes the date
 VMNAME="${TEMPLATE_PREFIX}-${TODAY}"
-GIT_COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+# Metadata filename is STATIC (no date)
+SHORT_VERSION=$(echo "$TEMPLATE_PREFIX" | grep -oP '[0-9]{2}\.[0-9]{2}' || echo "unknown")
+STRIPPED_VERSION=$(echo "$SHORT_VERSION" | tr -d '.')
+META_OUT="/var/lib/vz/template/ubuntu-${STRIPPED_VERSION}.meta.json"
 
 # ─────────────────────────────────────────
 # 🔒 PRECHECKS
@@ -26,27 +29,16 @@ command -v qm >/dev/null || { echo "❌ qm not found (Proxmox CLI required)"; ex
 command -v curl >/dev/null || { echo "❌ curl not found"; exit 1; }
 
 # ─────────────────────────────────────────
-# 📦 ISO MANAGEMENT
+# 📥 ISO DOWNLOAD
 # ─────────────────────────────────────────
-echo "📦 Checking ISO version..."
-LATEST_SHA256=$(curl -sI "${ISO_URL}" | grep -i 'etag:' | cut -d '"' -f2 || true)
-
-if [[ -f "$ISO_META_PATH" && -n "$LATEST_SHA256" ]] && grep -q "$LATEST_SHA256" "$ISO_META_PATH"; then
-  echo "✅ ISO is up to date."
-else
-  echo "📥 Downloading latest ISO..."
-  curl -fLo "$ISO_PATH" "$ISO_URL"
-  echo "$LATEST_SHA256" > "$ISO_META_PATH"
-
-  echo "🧹 Cleaning up old ISO files..."
-  find /var/lib/vz/template/iso/ -type f -name "${TEMPLATE_PREFIX}*.img" ! -newer "$ISO_META_PATH" -delete
-  find /var/lib/vz/template/iso/ -type f -name "${TEMPLATE_PREFIX}*.meta" ! -newer "$ISO_META_PATH" -delete
-fi
+echo "📥 Downloading latest ISO..."
+curl -fLo "$ISO_PATH" "$ISO_URL"
 
 # ─────────────────────────────────────────
-# 🔢 DYNAMIC VMID ALLOCATION
+# 🔢 DYNAMIC VMID ALLOCATION + OLDEST RECLAIM
 # ─────────────────────────────────────────
 echo "🎲 Finding available VMID..."
+VMID=""
 for ((i=VMID_START; i<=VMID_END; i++)); do
   if ! qm status "$i" &>/dev/null; then
     VMID="$i"
@@ -54,9 +46,17 @@ for ((i=VMID_START; i<=VMID_END; i++)); do
   fi
 done
 
-if [[ -z "${VMID:-}" ]]; then
-  echo "❌ No free VMID between $VMID_START and $VMID_END."
-  exit 1
+if [[ -z "$VMID" ]]; then
+  echo "♻️ No free VMID, reclaiming oldest..."
+  OLDEST_VMID=$(qm list | awk '$2 ~ /^'"$TEMPLATE_PREFIX"'/ { print $1","$2 }' | sort -t, -k2 | head -n1 | cut -d, -f1)
+  if [[ -n "$OLDEST_VMID" ]]; then
+    echo "🔥 Reclaiming VMID $OLDEST_VMID"
+    qm destroy "$OLDEST_VMID" --purge
+    VMID="$OLDEST_VMID"
+  else
+    echo "❌ No reclaimable template found."
+    exit 1
+  fi
 fi
 
 # ─────────────────────────────────────────
@@ -90,11 +90,6 @@ qm set "$VMID" \
   --ipconfig0 ip=dhcp
 
 # ─────────────────────────────────────────
-# 📄 SKIP INLINE CLOUD-INIT
-# ─────────────────────────────────────────
-echo "🧼 Skipping inline cloud-init. Terraform will inject YAML snippets later."
-
-# ─────────────────────────────────────────
 # 🪄 FINALIZE TEMPLATE
 # ─────────────────────────────────────────
 qm set "$VMID" --autostart off
@@ -102,42 +97,34 @@ qm template "$VMID"
 qm set "$VMID" --tags "cloudinit,ubuntu,auto-built"
 
 # ─────────────────────────────────────────
-# 🧹 DELETE OLD TEMPLATES
-# ─────────────────────────────────────────
-echo "🧹 Deleting old templates..."
-TEMPLATES=$(qm list | grep "$TEMPLATE_PREFIX" | awk '{print $1,$2,$3}' | sort -k3 -r)
-TEMPLATE_IDS=($(echo "$TEMPLATES" | awk '{print $1}'))
-
-for ((i=MAX_TEMPLATES; i<${#TEMPLATE_IDS[@]}; i++)); do
-  OLD_VMID="${TEMPLATE_IDS[$i]}"
-  echo "🔥 Destroying VMID $OLD_VMID"
-  qm destroy "$OLD_VMID" --purge
-done
-
-# ─────────────────────────────────────────
-# 🏷️ RETAG TEMPLATES
+# 🏷️ RETAG SURVIVING TEMPLATES
 # ─────────────────────────────────────────
 echo "🏷️ Retagging templates..."
-ALL_VMS=($(qm list | grep "$TEMPLATE_PREFIX" | sort -k3 -r | awk '{print $1}'))
-for i in "${!ALL_VMS[@]}"; do
+mapfile -t SURVIVING < <(qm list | awk '$2 ~ /^'"$TEMPLATE_PREFIX"'/ { print $1","$2 }' | sort -t, -k2 -r | cut -d, -f1)
+for i in "${!SURVIVING[@]}"; do
   tag="retired"
   [[ $i -eq 0 ]] && tag="active"
-  qm set "${ALL_VMS[$i]}" --tags "cloudinit,ubuntu,auto-built,$tag"
+  qm set "${SURVIVING[$i]}" --tags "cloudinit,ubuntu,auto-built,$tag"
 done
 
 # ─────────────────────────────────────────
-# 📋 SUMMARY
+# 🧾 BUILD METADATA
 # ─────────────────────────────────────────
-echo "✅ Template Created:"
-echo "   🆔 VMID: $VMID"
-echo "   🏷️ Name: $VMNAME"
-echo "   💾 Pool: $STORAGE_POOL"
-echo "   📅 Built: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-echo "   🧬 Version: ubuntu-24.04"
-echo "   🔖 Commit: $GIT_COMMIT_HASH"
+echo "🧾 Building metadata..."
+ISO_HASH=$(sha256sum "$ISO_PATH" | awk '{print $1}')
+SCRIPT_PATH="$(realpath "${BASH_SOURCE[0]}")"
+SCRIPT_HASH=$(sha256sum "$SCRIPT_PATH" | awk '{print $1}')
+CENTRAL_TIMESTAMP=$(TZ="America/Chicago" date '+%Y-%m-%dT%H:%M:%S%z')
 
-# ─────────────────────────────────────────
-# 📝 LOGGING (optional)
-# ─────────────────────────────────────────
-# LOGFILE="/var/log/template-builder.log"
-# exec > >(tee -a "$LOGFILE") 2>&1
+cat <<EOF > "$META_OUT"
+{
+  "iso_hash": "${ISO_HASH}",
+  "script_hash": "${SCRIPT_HASH}",
+  "template_id": "${VMID}",
+  "timestamp": "${CENTRAL_TIMESTAMP}",
+  "os_version": "ubuntu-${SHORT_VERSION}",
+  "template_name": "${VMNAME}"
+}
+EOF
+
+echo "📦 Metadata saved to: $META_OUT"
