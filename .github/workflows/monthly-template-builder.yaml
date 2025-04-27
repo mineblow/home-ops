@@ -5,17 +5,46 @@ on:
   schedule:
     - cron: '0 5 1 * *'  # 1st of every month @ 5AM UTC
   workflow_dispatch:
-    inputs: {}
 
 jobs:
-  build-templates:
+  detect-templates:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write  # Required for OIDC → Vault login
+    timeout-minutes: 30
 
-    env:
-      PROXMOX_HOST: proxmox.mineblow.me
+    outputs:
+      templates: ${{ steps.set.outputs.templates }}
+    steps:
+      - name: 📎 Checkout repo
+        uses: actions/checkout@v4
+
+      - id: set
+        run: |
+          set -euo pipefail
+
+          files=$(find .proxmox/iso-builder -type f -name '*-template.sh' -exec basename {} \;)
+
+          if [ -z "$files" ]; then
+            echo "❌ No templates found to build. Exiting safely."
+            exit 1
+          fi
+
+          echo "Found templates: $files"
+          json=$(jq -nc --argjson arr "$(printf '%s\n' $files | jq -R . | jq -s .)" '$arr')
+          echo "templates=$json" >> "$GITHUB_OUTPUT"
+
+  build-template:
+    needs: detect-templates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+
+    strategy:
+      matrix:
+        template: ${{ fromJson(needs.detect-templates.outputs.templates) }}
 
     steps:
       - name: 📎 Checkout repo
@@ -27,140 +56,324 @@ jobs:
           credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
 
       - name: 🧠 Extract Vault bootstrap from GCP
-        run: |
-          set -euo pipefail
+        run: bash ./.scripts/cicd/bootstrap/auth-google.sh
 
-          RAW=$(gcloud secrets versions access latest --secret=vault_bootstrap)
-          echo "$RAW" > vault.json
-
-          REQUIRED_KEYS=(vault_addr vault_role oauth_client_id oauth_client_secret)
-          for key in "${REQUIRED_KEYS[@]}"; do
-            VALUE=$(jq -r ."$key" vault.json)
-            if [[ "$VALUE" == "null" || -z "$VALUE" ]]; then
-              echo "❌ Missing $key in vault.json"
-              exit 1
-            fi
-          done
-
-          export VAULT_ADDR=$(jq -r .vault_addr vault.json)
-          export VAULT_ROLE=$(jq -r .vault_role vault.json)
-          export CLIENT_ID=$(jq -r .oauth_client_id vault.json)
-          export CLIENT_SECRET=$(jq -r .oauth_client_secret vault.json)
-
-          echo "::add-mask::$VAULT_ADDR"
-          echo "::add-mask::$CLIENT_ID"
-          echo "::add-mask::$CLIENT_SECRET"
-
-          echo "VAULT_ADDR=$VAULT_ADDR" >> "$GITHUB_ENV"
-          echo "VAULT_ROLE=$VAULT_ROLE" >> "$GITHUB_ENV"
-          echo "TAILSCALE_CLIENT_ID=$CLIENT_ID" >> "$GITHUB_ENV"
-          echo "TAILSCALE_CLIENT_SECRET=$CLIENT_SECRET" >> "$GITHUB_ENV"
-
-      - name: 🌐 Start Tailscale
+      - name: 🌐 Start Tailscale (GitHub-hosted)
         uses: tailscale/github-action@v2
         with:
           oauth-client-id: ${{ env.TAILSCALE_CLIENT_ID }}
           oauth-secret: ${{ env.TAILSCALE_CLIENT_SECRET }}
-          hostname: template-runner
+          hostname: template-builder-ci
           tags: tag:github-ci
 
-      - name: 🌐 Wait for Tailscale to connect
-        run: |
-          for i in {1..5}; do
-            if tailscale status >/dev/null 2>&1; then
-              break
-            fi
-            echo "⏳ Waiting for Tailscale..."
-            sleep 5
-          done
+      - name: 💠 Install Vault CLI
+        run: bash .scripts/cicd/bootstrap/install-vault.sh
 
-      - name: 🔓 Authenticate to Vault (OIDC)
+      - name: 🔓 Authenticate to Vault
+        env:
+          VAULT_ROLE: template-builder-ci
+        run: bash ./.scripts/cicd/bootstrap/vault-auth.sh
+
+      - name: 🔐 Fetch Proxmox secrets from Vault
         run: |
           set -euo pipefail
 
-          JWT=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-                      "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r .value)
+          SECRET_PATH="kv/home-ops/environment/homelab/template-builder/secrets/proxmox_ssh_key_private"
+          echo "🔑 Fetching SSH key from Vault: $SECRET_PATH"
 
-          RESPONSE=$(curl -s --request POST \
-            --data "{\"jwt\":\"$JWT\",\"role\":\"${VAULT_ROLE}\"}" \
-            "$VAULT_ADDR/v1/auth/jwt/login")
+          vault kv get -field=value "$SECRET_PATH" | cat > proxmox.key
 
-          VAULT_TOKEN=$(echo "$RESPONSE" | jq -r .auth.client_token)
-
-          if [[ "$VAULT_TOKEN" == "null" || -z "$VAULT_TOKEN" ]]; then
-            echo "❌ Vault login failed"
-            echo "$RESPONSE"
-            exit 1
-          fi
-
-          echo "::add-mask::$VAULT_TOKEN"
-          echo "VAULT_TOKEN=$VAULT_TOKEN" >> "$GITHUB_ENV"
-
-      - name: 🔑 Fetch and validate SSH key from Vault
-        run: |
-          set -euo pipefail
-
-          SECRET_PATH="kv/data/home-ops/proxmox/automation_ssh_key"
-          curl -s -H "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/$SECRET_PATH" \
-            | jq -r '.data.data.value' > proxmox.key
-
+          echo "🔧 Setting permissions on key file"
           chmod 600 proxmox.key
-          ssh-keygen -y -f proxmox.key >/dev/null
 
-      - name: 📤 Copy all builder scripts to Proxmox host
+          echo "🔑 Fetching SSH user + domain"
+          PROXMOX_SSH_USER=$(vault kv get -field=value kv/home-ops/global/proxmox/proxmox_ssh_user)
+          PROXMOX_DOMAIN=$(vault kv get -field=value kv/home-ops/global/proxmox/domain)
+          echo "::add-mask::$PROXMOX_SSH_USER"
+          echo "::add-mask::$PROXMOX_DOMAIN"
+          echo "PROXMOX_SSH_USER=$PROXMOX_SSH_USER" >> "$GITHUB_ENV"
+          echo "PROXMOX_DOMAIN=$PROXMOX_DOMAIN" >> "$GITHUB_ENV"
+        env:
+          VAULT_ADDR: ${{ env.VAULT_ADDR }}
+          VAULT_TOKEN: ${{ env.VAULT_TOKEN }}
+
+      - name: 📤 Copy script and cloud-init YAML to Proxmox host
         run: |
           set -euo pipefail
-          shopt -s nullglob
 
-          scripts=(.scripts/*template.sh)
+          SCRIPT_NAME="${{ matrix.template }}"
+          VERSION=$(echo "$SCRIPT_NAME" | sed -E 's/^build-ubuntu-([0-9]{4})-template.sh$/\1/')
+          CLOUDINIT_FILE="ubuntu-${VERSION}.yaml"
 
-          if [[ ${#scripts[@]} -eq 0 ]]; then
-            echo "❌ No matching template scripts found in .scripts/"
+          echo "📥 Creating scripts folder if missing..."
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i proxmox.key \
+            "$PROXMOX_SSH_USER@$PROXMOX_DOMAIN" \
+            "mkdir -p /home/$PROXMOX_SSH_USER/scripts"
+
+          echo "📤 Uploading template builder script..."
+          scp -i proxmox.key -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            ".proxmox/iso-builder/${SCRIPT_NAME}" \
+            "$PROXMOX_SSH_USER@$PROXMOX_DOMAIN:/home/$PROXMOX_SSH_USER/scripts/"
+
+          echo "🔧 Making builder script executable..."
+          ssh -i proxmox.key -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            "$PROXMOX_SSH_USER@$PROXMOX_DOMAIN" \
+            "sudo -n chmod +x /home/$PROXMOX_SSH_USER/scripts/${SCRIPT_NAME}"
+
+          echo "📥 Uploading cloud-init YAML file..."
+          scp -i proxmox.key -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            ".proxmox/.cloud-init/${CLOUDINIT_FILE}" \
+            "$PROXMOX_SSH_USER@$PROXMOX_DOMAIN:/var/lib/vz/snippets/${CLOUDINIT_FILE}"
+
+      - name: 🚀 Execute and delete script on Proxmox host
+        run: |
+          set -euo pipefail
+          SCRIPT_NAME=${{ matrix.template }}
+
+          echo "🚀 Running $SCRIPT_NAME remotely on $PROXMOX_DOMAIN"
+          ssh -i proxmox.key -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$PROXMOX_SSH_USER@$PROXMOX_DOMAIN" \
+            "bash -c 'set -euo pipefail && sudo -n /home/$PROXMOX_SSH_USER/scripts/$SCRIPT_NAME && rm -f /home/$PROXMOX_SSH_USER/scripts/$SCRIPT_NAME'"
+
+      - name: 📥 Pull metadata from Proxmox
+        id: fetch_meta
+        run: |
+          set -euo pipefail
+
+          SCRIPT_NAME="${{ matrix.template }}"
+          VERSION=$(echo "$SCRIPT_NAME" | sed -E 's/^build-ubuntu-([0-9]{4})-template.sh$/\1/')
+          META_NAME="ubuntu-${VERSION}.meta.json"
+
+          echo "📥 Downloading $META_NAME from Proxmox..."
+          scp -i proxmox.key -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            "$PROXMOX_SSH_USER@$PROXMOX_DOMAIN:/var/lib/vz/template/$META_NAME" \
+            "./$META_NAME"
+
+          if [[ ! -s "$META_NAME" ]]; then
+            echo "❌ Failed to fetch metadata file or file is empty."
             exit 1
           fi
 
-          for script in "${scripts[@]}"; do
-            echo "📤 Copying $script"
-            scp -i proxmox.key -o StrictHostKeyChecking=no "$script" auto@$PROXMOX_HOST:/home/auto/scripts/ || {
-              echo "❌ SCP failed for $script"
-              exit 1
-            }
+          echo "✅ Pulled and verified: $META_NAME"
+          echo "meta_file=$META_NAME" >> "$GITHUB_OUTPUT"
 
-            ssh -o BatchMode=yes -i proxmox.key -o StrictHostKeyChecking=no auto@$PROXMOX_HOST \
-              "sudo -n chmod +x /home/auto/scripts/$(basename "$script")" || {
-                echo "❌ chmod failed for $script"
-                exit 1
-              }
-          done
+          echo "🧹 Cleaning up metadata from remote"
+          ssh -i proxmox.key -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            "$PROXMOX_SSH_USER@$PROXMOX_DOMAIN" \
+            "rm -f /var/lib/vz/template/$META_NAME"
 
-      - name: 🚀 Execute all builder scripts
+      - name: 🔐 Push metadata to Vault
         run: |
           set -euo pipefail
-          shopt -s nullglob
 
-          scripts=(.scripts/*template.sh)
+          META_FILE="${{ steps.fetch_meta.outputs.meta_file }}"
 
-          if [[ ${#scripts[@]} -eq 0 ]]; then
-            echo "❌ No matching template scripts found in .scripts/"
+          if [[ ! -f "$META_FILE" ]]; then
+            echo "❌ Metadata file missing. Abort Vault push."
             exit 1
           fi
 
-          for script in "${scripts[@]}"; do
-            name=$(basename "$script")
-            echo "🚀 Running $name"
-            ssh -o BatchMode=yes -i proxmox.key -o StrictHostKeyChecking=no auto@$PROXMOX_HOST \
-              "set -euo pipefail; sudo -n /home/auto/scripts/$name" || {
-                echo "❌ $name failed"
-                exit 1
-              }
-          done
+          DISTRO=$(jq -r '.os_version' "$META_FILE" | cut -d'-' -f1)
+          VERSION=$(jq -r '.os_version' "$META_FILE" | cut -d'-' -f2 | tr -d '.')
+          VAULT_PATH="kv/home-ops/environment/homelab/template-builder/build-state/${DISTRO}-${VERSION}"
 
-      # - name: 📜 Save logs or metadata (optional)
-      #   if: always()
-      #   run: |
-      #     echo "📝 TODO: Save build logs or output JSON to Vault/GCS"
+          echo "📦 Pushing parsed metadata to Vault at $VAULT_PATH"
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' "$META_FILE" | xargs vault kv put "$VAULT_PATH"
+        env:
+          VAULT_ADDR: ${{ env.VAULT_ADDR }}
+          VAULT_TOKEN: ${{ env.VAULT_TOKEN }}
 
       - name: 🧹 Cleanup
         if: always()
+        run: rm -f proxmox.key vault.json *.meta.json
+
+  vm_config_bumper:
+    needs: build-template
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+
+    strategy:
+      matrix:
+        vm: ["bootstrap-runner", "k3s-master"]
+
+    steps:
+      - name: 📎 Checkout repo
+        uses: actions/checkout@v4
+
+      - name: 🔐 Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+
+      - name: 🧠 Extract Vault bootstrap from GCP
+        run: bash ./.scripts/cicd/bootstrap/auth-google.sh
+
+      - name: 🌐 Start Tailscale (GitHub-hosted)
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ env.TAILSCALE_CLIENT_ID }}
+          oauth-secret: ${{ env.TAILSCALE_CLIENT_SECRET }}
+          hostname: template-builder-ci
+          tags: tag:github-ci
+
+      - name: 💠 Install Vault CLI
+        run: bash .scripts/cicd/bootstrap/install-vault.sh
+
+      - name: 🔐 Authenticate to Vault
+        run: bash .scripts/cicd/bootstrap/vault-auth.sh
+        env:
+          VAULT_ROLE: template-builder-ci
+          VAULT_ADDR: ${{ env.VAULT_ADDR }}
+          VAULT_TOKEN: ${{ env.VAULT_TOKEN }}
+
+      - name: 🧠 Fetch VM metadata (gracefully skip if missing)
+        id: fetch_meta
+        continue-on-error: true
         run: |
-          rm -f proxmox.key vault.json
+          set -euo pipefail
+          VM="${{ matrix.vm }}"
+          VAULT_VM_PATH="kv/home-ops/environment/homelab/${VM}/opentofu/metadata"
+
+          echo "🔍 Attempting to fetch metadata for $VM..."
+          if ! vault kv get -format=json "$VAULT_VM_PATH" > vm_meta.json 2>/dev/null; then
+            echo "❌ Metadata not found or access denied for $VM. Skipping job."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          OS_VERSION=$(jq -r '.data.data.os_version' vm_meta.json)
+          echo "os_version=$OS_VERSION" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+        env:
+          VAULT_ADDR: ${{ env.VAULT_ADDR }}
+          VAULT_TOKEN: ${{ env.VAULT_TOKEN }}
+
+      - name: 📥 Fetch latest template ID from Vault
+        id: fetch_template
+        if: steps.fetch_meta.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+
+          OS_VERSION="${{ steps.fetch_meta.outputs.os_version }}"
+          vault kv get -format=json kv/home-ops/environment/homelab/template-builder/build-state/${OS_VERSION} > template_meta.json
+
+          TEMPLATE_ID=$(jq -r '.data.data.template_id' template_meta.json)
+          echo "template_id=$TEMPLATE_ID" >> "$GITHUB_OUTPUT"
+        env:
+          VAULT_ADDR: ${{ env.VAULT_ADDR }}
+          VAULT_TOKEN: ${{ env.VAULT_TOKEN }}
+
+      - name: 📥 Fetch current terraform.auto.tfvars from Vault
+        if: steps.fetch_meta.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+
+          VM="${{ matrix.vm }}"
+          vault kv get -field=value kv/home-ops/environment/homelab/${VM}/opentofu/terraform-auto-tfvars > terraform.auto.tfvars
+        env:
+          VAULT_ADDR: ${{ env.VAULT_ADDR }}
+          VAULT_TOKEN: ${{ env.VAULT_TOKEN }}
+
+      - name: 🔎 Check if template_vmid is stale
+        id: check
+        if: steps.fetch_meta.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+
+          VM="${{ matrix.vm }}"
+          TEMPLATE_ID="${{ steps.fetch_template.outputs.template_id }}"
+          CURRENT_ID=$(awk "/\"${VM}\".*{/,/}/ {if (\$1 == \"template_vmid\") print \$3}" terraform.auto.tfvars)
+
+          echo "Current VMID: $CURRENT_ID, Latest: $TEMPLATE_ID"
+
+          if [[ "$CURRENT_ID" != "$TEMPLATE_ID" ]]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 📤 Create stale signal file and PR
+        if: steps.check.outputs.stale == 'true'
+        run: |
+          set -euo pipefail
+
+          VM="${{ matrix.vm }}"
+          BRANCH="signal-template-bump-${VM}"
+          TEMPLATE_ID="${{ steps.fetch_template.outputs.template_id }}"
+
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+          echo "🔄 Pulling latest main before branch creation..."
+          git pull --rebase origin main || echo "⚠️ Rebase not needed or harmless failure."
+
+          echo "🔍 Checking if branch already exists remotely..."
+          if git ls-remote --exit-code --heads origin "$BRANCH"; then
+            echo "✅ Branch already exists. Fetching..."
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+          else
+            echo "➕ Branch does not exist. Creating new branch."
+            git checkout -b "$BRANCH"
+          fi
+
+          echo "🛠️ Now creating signal file after branch is checked out..."
+          mkdir -p .ci-signals/template_vmid
+
+          TIMESTAMP="$(TZ='America/Chicago' date +"%B %d, %Y @ %-I:%M %p CT")"
+
+          {
+            echo "template_vmid for $VM is stale. Needs update to ${TEMPLATE_ID} - Generated at $TIMESTAMP"
+          } > .ci-signals/template_vmid/${VM}
+
+          git add .ci-signals/template_vmid/${VM}
+          git commit -m "Update template_vmid update required for ${VM}" || echo "Nothing new to commit."
+          git push origin "$BRANCH"
+
+          echo "🔍 Checking if PR already exists for branch..."
+          PR_NUMBER=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' || echo "")
+
+          CURRENT_ID=$(awk "/\"${VM}\".*{/,/}/ {if (\$1 == \"template_vmid\") print \$3}" terraform.auto.tfvars)
+
+          PR_BODY=$(
+            echo "### 📦 Template VMID Update Required"
+            echo ""
+            echo "| Package | Update | Change |"
+            echo "|:--------|:-------|:-------|"
+            echo "| ${VM} (template) | major | ${CURRENT_ID} -> ${TEMPLATE_ID} |"
+            echo ""
+            echo "---"
+            echo ""
+            echo "### ⚙️ Configuration"
+            echo ""
+            echo "- 📅 **Schedule**: Created automatically when template update detected"
+            echo "- 🚦 **Automerge**: Disabled (requires manual approval)"
+            echo "- ♻ **Rebasing**: Automatic if conflicts detected"
+            echo "- 🔕 **Ignore**: Close this PR to skip this update"
+            echo ""
+            echo "---"
+            echo ""
+            echo "<sub>Generated by GitHub Actions CI/CD</sub>"
+          )
+
+          if [ -n "$PR_NUMBER" ]; then
+            echo "✅ PR already exists. Updating PR body..."
+            gh pr edit "$PR_NUMBER" --body "$PR_BODY"
+          else
+            echo "➕ Creating new PR."
+            gh pr create \
+              --title "Update template_vmid for ${VM}" \
+              --body "$PR_BODY" \
+              --head "$BRANCH" \
+              --base main
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 💤 VM skipped (no metadata in Vault)
+        if: steps.fetch_meta.outputs.skip == 'true'
+        run: echo "⚠️  Skipping ${{ matrix.vm }} — metadata secret not found in Vault."
